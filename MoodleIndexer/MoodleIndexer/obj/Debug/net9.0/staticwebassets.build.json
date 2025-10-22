@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Hash": "tEaT/SE2rTLzcdMafZTDYOCHxAd1gSWK12f+VpMyb+s=",
+  "Source": "MoodleIndexer",
+  "BasePath": "_content/MoodleIndexer",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": [],
+  "Endpoints": []
+}

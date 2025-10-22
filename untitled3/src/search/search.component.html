@@ -1,0 +1,131 @@
+<div class="search-wrapper">
+  <mat-card class="search-card">
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Suchbegriff</mat-label>
+<!--      <input matInput [(ngModel)]="query" (keyup.enter)="searchCourses()" />-->
+      <input matInput [ngModel]="query" (ngModelChange)="onQueryChange($event)" />
+
+    </mat-form-field>
+
+    <div class="filters">
+<!--      <mat-form-field appearance="outline">
+        <mat-label>Sortierung</mat-label>
+        <mat-select [(ngModel)]="sortBy">
+          <mat-option value="title">Titel (A-Z)</mat-option>
+          <mat-option value="id">ID</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Kategorie</mat-label>
+        <mat-select [(ngModel)]="filterCategory">
+          <mat-option value="">Alle</mat-option>
+          <mat-option value="mathe">Mathematik</mat-option>
+          <mat-option value="physik">Physik</mat-option>
+          <mat-option value="informatik">Informatik</mat-option>
+        </mat-select>
+      </mat-form-field>-->
+
+      <button mat-raised-button color="primary" (click)="searchCourses()">Suchen</button>
+    </div>
+  </mat-card>
+
+  <mat-progress-bar *ngIf="loading" mode="indeterminate" color="accent"></mat-progress-bar>
+
+  <div *ngIf="results.length > 0" class="results">
+    <button mat-button (click)="toggleAll()">Alle {{ allExpanded ? 'zuklappen' : 'aufklappen' }}</button>
+
+    <mat-card *ngFor="let course of results" class="result-card">
+      <mat-card-title [innerHTML]="highlight(course.title)"></mat-card-title>
+      <mat-card-content>
+        <div [innerHTML]="highlight(stripHtml(course.description))"></div>
+
+        <!-- === Abschnitte === -->
+<!--
+        <ng-container *ngIf="course.sections?.length">
+-->
+        <ng-container *ngIf="hasVisibleSections(course)">
+
+        <h4 class="collapsible-header" (click)="toggle('sections-' + course.id)">
+            <mat-icon>{{ getToggleIcon('sections-' + course.id) }}</mat-icon>
+            Abschnitte
+          </h4>
+          <ul *ngIf="isExpanded('sections-' + course.id)">
+<!--            <li *ngFor="let sec of course.sections">-->
+            <li *ngFor="let sec of course.sections"
+                [hidden]="(!sec.name || !sec.name.trim()) && (!sec.summary || !stripHtml(sec.summary).trim())">
+
+            <strong [innerHTML]="highlight(sec.name)"></strong>:
+<!--
+              <span [innerHTML]="highlight(stripHtml(sec.summary))"></span>
+-->
+              <span [innerHTML]="cleanAndHighlight(sec.summary)"></span>
+
+            </li>
+          </ul>
+        </ng-container>
+
+        <!-- === Seiten === -->
+        <ng-container *ngIf="course.pages?.length">
+          <h4 class="collapsible-header" (click)="toggle('pages-' + course.id)">
+            <mat-icon>{{ getToggleIcon('pages-' + course.id) }}</mat-icon>
+            Seiten
+          </h4>
+          <ul *ngIf="isExpanded('pages-' + course.id)">
+            <li *ngFor="let page of course.pages">
+              <strong [innerHTML]="highlight(page.name)"></strong>
+              <div [innerHTML]="highlight(stripHtml(page.content))"></div>
+            </li>
+          </ul>
+        </ng-container>
+
+        <!-- === Bücher === -->
+        <ng-container *ngIf="course.books?.length">
+          <h4 class="collapsible-header" (click)="toggle('books-' + course.id)">
+            <mat-icon>{{ getToggleIcon('books-' + course.id) }}</mat-icon>
+            Bücher
+          </h4>
+          <ul *ngIf="isExpanded('books-' + course.id)">
+            <li *ngFor="let book of course.books">
+              <strong [innerHTML]="highlight(book.book_name)"></strong> –
+              <strong [innerHTML]="highlight(book.chapter_title)"></strong>
+              <div [innerHTML]="highlight(stripHtml(book.content))"></div>
+            </li>
+          </ul>
+        </ng-container>
+
+        <!-- === Dateien === -->
+        <ng-container *ngIf="course.files?.length">
+          <h4 class="collapsible-header" (click)="toggle('files-' + course.id)">
+            <mat-icon>{{ getToggleIcon('files-' + course.id) }}</mat-icon>
+            Dateien
+          </h4>
+          <ul *ngIf="isExpanded('files-' + course.id)">
+            <li *ngFor="let file of course.files">
+              📎
+              <a [href]="file.url" target="_blank" rel="noopener">
+                <span [innerHTML]="highlight(file.filename)"></span>
+              </a>
+              ({{ getReadableSize(file.filesize) }})
+
+
+              <div *ngIf="file.text" class="file-preview">
+                <div *ngFor="let snippet of getHighlightedSnippets(file.text, query)">
+                  <span [innerHTML]="highlightWithBreaks(stripHtml(snippet))"></span>
+                </div>
+              </div>
+
+            </li>
+          </ul>
+        </ng-container>
+      </mat-card-content>
+    </mat-card>
+  </div>
+
+  <div *ngIf="!loading && results.length === 0 && query" class="no-results">
+    <mat-icon>search_off</mat-icon>
+    <p>Keine Ergebnisse gefunden.</p>
+  </div>
+</div>
+
+
