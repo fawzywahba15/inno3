@@ -1,6 +1,7 @@
 version: "3.9"
 
 services:
+  # === MariaDB (Datenbank für Moodle) ===
   mariadb:
     image: bitnami/mariadb:latest
     container_name: moodle-db
@@ -15,6 +16,7 @@ services:
     volumes:
       - mariadb_data:/bitnami/mariadb
 
+  # === Moodle ===
   moodle:
     image: bitnami/moodle:latest
     container_name: moodle
@@ -28,13 +30,14 @@ services:
       - MOODLE_DATABASE_NAME=bitnami_moodle
       - MOODLE_USERNAME=admin
       - MOODLE_PASSWORD=adminpass
-      - MOODLE_SITE_NAME="My Moodle"
+      - MOODLE_SITE_NAME=My Moodle
       - MOODLE_EMAIL=user@example.com
     ports:
       - "8081:8080"
     volumes:
       - moodle_data:/bitnami/moodle
 
+  # === MeiliSearch ===
   meilisearch:
     image: getmeili/meilisearch:latest
     container_name: meilisearch
@@ -45,6 +48,21 @@ services:
       - "7700:7700"
     volumes:
       - meili_data:/meili_data
+
+  # === C# Indexer Script ===
+  moodle-indexer:
+    build: ./MoodleIndexer
+    container_name: moodle-indexer
+    depends_on:
+      - moodle
+      - mariadb
+      - meilisearch
+    environment:
+      - DOTNET_ENVIRONMENT=Production
+    volumes:
+      - ./MoodleIndexer/appsettings.json:/app/appsettings.json:ro
+    # automatisch starten, sobald andere Container laufen
+    restart: "no"
 
 volumes:
   mariadb_data:
