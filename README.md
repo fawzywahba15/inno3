@@ -30,7 +30,7 @@ Dieses Projekt stellt eine vollständige Suchplattform für Moodle-Kurse bereit,
 
 ---
 
-## ▶️Start mit Docker
+## ▶Start mit Docker
 
 Alle Backend-Komponenten (Moodle, DB, MeiliSearch, Indexer) werden automatisch gestartet.
 
