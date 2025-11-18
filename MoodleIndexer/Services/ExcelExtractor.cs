@@ -66,4 +66,18 @@ public class ExcelExtractor
 
         return result.ToString().Trim();
     }
+    
+    public string ExtractFromBytes(byte[] fileBytes)
+    {
+        try
+        {
+            using var ms = new MemoryStream(fileBytes);
+            return ExtractTextFromStream(ms);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Fehler beim In-Memory Excel-Parsing: {ex.Message}");
+            return "";
+        }
+    }
 }

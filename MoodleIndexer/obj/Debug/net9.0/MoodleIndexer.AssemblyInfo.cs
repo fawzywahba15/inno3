@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MoodleIndexer")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+751c9c88b0323724cced0dc0e1c437d67b5046c4")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+1ce31939635729a07ae6b4526786f33699c40f12")]
 [assembly: System.Reflection.AssemblyProductAttribute("MoodleIndexer")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MoodleIndexer")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

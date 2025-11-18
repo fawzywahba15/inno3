@@ -7,7 +7,9 @@ public class ZipExtractor
 {
     private readonly HttpClient _httpClient = new();
 
-    // DTO, um extrahierte Datei-Bytes und Filename zurückzugeben
+    /// <summary>
+    /// DTO, um extrahierte Datei-Bytes und Filename zurückzugeben
+    /// </summary>
     public class ExtractedFile
     {
         public string Filename { get; set; } = "";
@@ -24,6 +26,7 @@ public class ZipExtractor
 
         try
         {
+            Console.WriteLine($"[INFO] Lade ZIP-Datei von URL: {url}");
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 
@@ -55,8 +58,7 @@ public class ZipExtractor
         }
         catch (Exception ex)
         {
-            // Logging des Fehlers sollte hier stattfinden
-            Console.WriteLine($" Fehler beim Entpacken der ZIP-Datei von URL {url}: {ex.Message}");
+            Console.WriteLine($"❌ Fehler beim Entpacken der ZIP-Datei von URL {url}: {ex.Message}");
         }
 
         return extractedFiles;

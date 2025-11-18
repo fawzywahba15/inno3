@@ -68,4 +68,23 @@ public class PowerPointExtractor
 
         return sb.ToString().Trim();
     }
+    
+    public string ExtractFromBytes(byte[] fileBytes)
+    {
+        try
+        {
+            Console.WriteLine($"[INFO] Starte In-Memory PPTX-Parsing.");
+            
+            // Erstelle einen MemoryStream aus dem Byte-Array
+            using var stream = new MemoryStream(fileBytes);
+            
+            // Verwende die bestehende Extraktionslogik
+            return ExtractTextFromStream(stream);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Fehler beim In-Memory PPTX-Parsing: {ex.Message}");
+            return "";
+        }
+    }
 }

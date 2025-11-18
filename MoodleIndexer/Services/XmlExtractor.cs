@@ -58,4 +58,24 @@ public class XmlExtractor
             return xml; // Rückfall auf Rohinhalt
         }
     }
+    
+    public string ExtractFromBytes(byte[] fileBytes)
+    {
+        try
+        {
+            Console.WriteLine($"[INFO] Starte In-Memory XML-Parsing.");
+            
+            // Konvertiere das Byte-Array in einen String (UTF8 ist der Standard für moderne XML/Web-Daten)
+            var xml = System.Text.Encoding.UTF8.GetString(fileBytes);
+            
+            // Verwende die bestehende Formatierungslogik
+            return FormatXml(xml);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Fehler beim In-Memory XML-Parsing: {ex.Message}");
+            return "";
+        }
+    }
+    
 }

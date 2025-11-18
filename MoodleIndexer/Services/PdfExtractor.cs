@@ -87,60 +87,42 @@ public class PdfExtractor
 
         return string.Join("\n", result);
     }
-}
-
-
-/*using System.Text.RegularExpressions;
-using UglyToad.PdfPig;
-
-namespace MoodleIndexer.Services;
-
-public class PdfExtractor
-{
-    public async Task<string> ExtractFromUrl(string url)
+    
+    
+    public string ExtractFromBytes(byte[] fileBytes)
     {
         try
         {
-            using var client = new HttpClient();
-            var response = await client.GetAsync(url);
-            response.EnsureSuccessStatusCode();
+            Console.WriteLine($"[INFO] Starte In-Memory PDF-Parsing.");
+            
+            // 1. Erstelle einen MemoryStream aus dem Byte-Array
+            using var stream = new MemoryStream(fileBytes);
 
-            using var stream = await response.Content.ReadAsStreamAsync();
-            using var doc = PdfDocument.Open(stream);
-            return string.Join("\n", doc.GetPages().Select(p => p.Text));
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[PDF] Fehler beim Laden aus URL {url}: {ex.Message}");
-            return "";
-        }
-    }
-
-    public string ExtractFromLocalHash(string contentHash, string basePath)
-    {
-        try
-        {
-            var subfolder1 = contentHash.Substring(0, 2);
-            var subfolder2 = contentHash.Substring(2, 2);
-            var fullPath = Path.Combine(basePath, subfolder1, subfolder2, contentHash);
-
-            Console.WriteLine($"📂 Versuche lokale PDF zu laden: {fullPath}");
-
-            if (!File.Exists(fullPath))
+            // 2. Sicherheitscheck: Prüfen, ob der Header '%PDF-' enthält
+            byte[] header = new byte[5];
+            stream.Read(header, 0, 5);
+            stream.Position = 0; // Setze den Stream-Position zurück
+            
+            var headerStr = System.Text.Encoding.ASCII.GetString(header);
+            if (!headerStr.StartsWith("%PDF-"))
             {
-                Console.WriteLine($"❌ Lokale Datei nicht gefunden: {fullPath}");
+                Console.WriteLine("[ERROR] Datei ist kein gültiges PDF (Header fehlt)");
                 return "";
             }
 
-            using var doc = PdfDocument.Open(fullPath);
-            var text = string.Join("\n", doc.GetPages().Select(p => p.Text));
-            Console.WriteLine($"📄 Extrahierter Text (erste 300 Zeichen): {text.Substring(0, Math.Min(300, text.Length))}");
+            // 3. Öffne das Dokument über den Stream
+            using var doc = PdfDocument.Open(stream);
+            
+            var text = ExtractTextFromDocument(doc);
+            
+            Console.WriteLine($"[INFO] In-Memory PDF erfolgreich geladen. Textlänge: {text.Length} Zeichen");
             return text.Trim();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Fehler beim lokalen PDF-Parsing ({contentHash}): {ex.Message}");
+            Console.WriteLine($"[ERROR] Fehler beim In-Memory PDF-Parsing: {ex.Message}");
             return "";
         }
     }
-}*/
+}
+

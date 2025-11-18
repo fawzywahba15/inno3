@@ -49,7 +49,7 @@ public class MoodleService
             $"Server={db["Host"]};Port={db["Port"]};Database={db["Database"]};Uid={db["User"]};Pwd={db["Password"]};";
     }
 
-    public List<Course> FetchCourses()
+    public async Task<List<Course>> FetchCourses()
     {
         var courses = new List<Course>();
 
@@ -76,7 +76,7 @@ public class MoodleService
             course.Sections = FetchSections(course.Id);
             course.Pages = FetchPages(course.Id);
             course.Books = FetchBooks(course.Id);
-            course.Files = FetchFiles(course.Id);
+            course.Files = await FetchFiles(course.Id);
         }
 
         Console.WriteLine($" Insgesamt importierte Kurse: {courses.Count}");
@@ -175,7 +175,7 @@ public class MoodleService
         return books;
     }
 
-    private List<CourseFile> FetchFiles(int courseId)
+    private async Task<List<CourseFile>> FetchFiles(int courseId)
     {
         var files = new List<CourseFile>();
 
@@ -208,8 +208,53 @@ public class MoodleService
             var url = BuildFileUrl(reader);
 
             string text = "";
+            
+            var tempFiles = new List<CourseFile>(); // Für ZIP-entpackte Dateien
+            
+            
+            if (mimetype == "application/zip" || mimetype == "application/x-zip-compressed")
+            {
+                Console.WriteLine($"📦 ZIP-Datei wird verarbeitet: {filename}");
+                try
+                {
+                    var extracted = await _zipExtractor.ExtractFromUrlAsync(url);
+                    
+                    if (extracted.Any())
+                    {
+                        Console.WriteLine($" -> {extracted.Count} Dateien entpackt.");
+                    }
 
-            if (mimetype == "application/pdf")
+                    foreach (var entry in extracted)
+                    {
+                        // ➡️ Verwende die neue Helfer-Methode zur Verarbeitung
+                        var extractedText = ProcessExtractedFile(entry.Filename, entry.ContentBytes);
+                        
+                        if (!string.IsNullOrWhiteSpace(extractedText))
+                        {
+                            // Erstelle ein neues CourseFile-Objekt für die entpackte Datei
+                            tempFiles.Add(new CourseFile
+                            {
+                                Filename = $"{filename}/{entry.Filename}", // Name der ZIP + Dateiname
+                                Filepath = filepath,
+                                Filesize = entry.ContentBytes.Length,
+                                Mimetype = GetMimeTypeFromExtension(entry.Filename),
+                                Module = reader["component"].ToString()!.Replace("mod_", ""),
+                                Filearea = reader["filearea"].ToString()!,
+                                Timemodified = reader.GetInt64("timemodified"),
+                                Url = url, // URL zeigt auf die ZIP-Datei
+                                Text = extractedText
+                            });
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ Fehler beim Verarbeiten der ZIP-Datei {filename}: {ex.Message}");
+                    _errorCount++;
+                }
+            }
+            // 📄 Deine bestehende Extraktions-Logik
+            else if (mimetype == "application/pdf")
             {
                 Console.WriteLine($"📄 PDF wird extrahiert: {filename}");
 
@@ -432,9 +477,32 @@ public class MoodleService
 
 
 
+            if (tempFiles.Any())
+            {
+                files.AddRange(tempFiles);
+            }
+            else
+            {
+                files.Add(new CourseFile
+                {
+                    Filename = filename,
+                    Filepath = filepath,
+                    Filesize = reader.GetInt64("filesize"),
+                    Mimetype = mimetype,
+                    Module = reader["component"].ToString()!.Replace("mod_", ""),
+                    Filearea = reader["filearea"].ToString()!,
+                    Timemodified = reader.GetInt64("timemodified"),
+                    Url = url,
+                    Text = text
+                });
+            }
+        }
+
+        return files;
+    }
 
 
-
+            /*
             files.Add(new CourseFile
             {
                 Filename = filename,
@@ -450,30 +518,112 @@ public class MoodleService
         }
 
         return files;
-    }
+    }*/
 
-    private string BuildFileUrl(MySqlDataReader reader)
-    {
-        var filepath = reader["filepath"].ToString()!.Trim('/');
-        var parts = new List<string>
+            private string BuildFileUrl(MySqlDataReader reader)
+            {
+                var filepath = reader["filepath"].ToString()!.Trim('/');
+                var parts = new List<string>
+                {
+                    _baseUrl,
+                    "pluginfile.php",
+                    reader["contextid"].ToString()!,
+                    reader["component"].ToString()!,
+                    reader["filearea"].ToString()!,
+                    reader["itemid"].ToString()!
+                };
+
+                if (!string.IsNullOrEmpty(filepath))
+                    parts.Add(filepath);
+
+                parts.Add(reader["filename"].ToString()!);
+
+                /*return $"{string.Join("/", parts)}?token={_token}";*/
+                var url = string.Join("/", parts);
+                url = url.Replace("/pluginfile.php/", "/webservice/pluginfile.php/");
+                return $"{url}?token={_token}";
+
+            }
+
+    private string ProcessExtractedFile(string filename, byte[] fileBytes)
         {
-            _baseUrl,
-            "pluginfile.php",
-            reader["contextid"].ToString()!,
-            reader["component"].ToString()!,
-            reader["filearea"].ToString()!,
-            reader["itemid"].ToString()!
-        };
+            var extension = Path.GetExtension(filename).ToLowerInvariant();
+            string text = "";
 
-        if (!string.IsNullOrEmpty(filepath))
-            parts.Add(filepath);
+            try
+            {
+                switch (extension)
+                {
+                    case ".pdf":
+                        text = _pdfExtractor.ExtractFromBytes(fileBytes);
+                        break;
+                    case ".docx":
+                        text = _wordExtractor.ExtractFromBytes(fileBytes);
+                        break;
+                    case ".pptx":
+                        text = _pptExtractor.ExtractFromBytes(fileBytes);
+                        break;
+                    case ".txt":
+                        text = _textExtractor.ExtractFromBytes(fileBytes);
+                        break;
+                    case ".csv":
+                        text = _csvExtractor.ExtractFromBytes(fileBytes);
+                        break;
+                    case ".xlsx":
+                    case ".xls":
+                        text = _excelExtractor.ExtractFromBytes(fileBytes);
+                        break;
+                    case ".json":
+                        text = _jsonExtractor.ExtractFromBytes(fileBytes);
+                        break;
+                    case ".xml":
+                        text = _xmlExtractor.ExtractFromBytes(fileBytes);
+                        break;
+                    case ".html":
+                    case ".htm":
+                        text = _htmlExtractor.ExtractFromBytes(fileBytes);
+                        break;
+                    default:
+                        Console.WriteLine($"[WARN] Dateiendung {extension} in ZIP nicht unterstützt: {filename}");
+                        return "";
+                }
 
-        parts.Add(reader["filename"].ToString()!);
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    Console.WriteLine($"[WARN] Keine extrahierbaren Inhalte in: {filename}");
+                    _errorCount++;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Fehler beim Extrahieren von {filename} aus ZIP: {ex.Message}");
+                _errorCount++;
+            }
 
-        /*return $"{string.Join("/", parts)}?token={_token}";*/
-        var url = string.Join("/", parts);
-        url = url.Replace("/pluginfile.php/", "/webservice/pluginfile.php/");
-        return $"{url}?token={_token}";
+            return text;
+        }
 
-    }
+        // ➡️ Helfer-Methode zum Erraten des Mime-Typs
+        /// <summary>
+        /// Einfache Zuordnung von Dateiendung zu MIME-Typ.
+        /// </summary>
+        private string GetMimeTypeFromExtension(string filename)
+        {
+            var extension = Path.GetExtension(filename).ToLowerInvariant();
+            return extension switch
+            {
+                ".pdf" => "application/pdf",
+                ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ".xls" => "application/vnd.ms-excel",
+                ".txt" => "text/plain",
+                ".csv" => "text/csv",
+                ".json" => "application/json",
+                ".xml" => "application/xml",
+                ".html" => "text/html",
+                ".htm" => "text/html",
+                _ => "application/octet-stream"
+            };
+        }
 }

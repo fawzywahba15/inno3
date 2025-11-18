@@ -51,4 +51,23 @@ public class TextExtractor
             return "";
         }
     }
+    
+    public string ExtractFromBytes(byte[] fileBytes)
+    {
+        try
+        {
+            Console.WriteLine($"[INFO] Starte In-Memory Text-Parsing.");
+            
+            // Konvertiere das Byte-Array in einen String mit UTF8-Kodierung
+            var text = Encoding.UTF8.GetString(fileBytes);
+            
+            Console.WriteLine($"[DEBUG] In-Memory Text geladen ({text.Length} Zeichen)");
+            return text.Trim();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Fehler beim In-Memory Text-Parsing: {ex.Message}");
+            return "";
+        }
+    }
 }

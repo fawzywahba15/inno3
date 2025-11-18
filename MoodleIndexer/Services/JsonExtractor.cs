@@ -57,4 +57,25 @@ public class JsonExtractor
             return json; // Rückfall auf Rohinhalt, falls ungültig
         }
     }
+    
+    
+    
+    public string ExtractFromBytes(byte[] fileBytes)
+    {
+        try
+        {
+            Console.WriteLine($"[INFO] Starte In-Memory JSON-Parsing.");
+            
+            // Konvertiere das Byte-Array in einen String (UTF8 ist Standard für JSON)
+            var json = System.Text.Encoding.UTF8.GetString(fileBytes);
+            
+            // Verwende die bestehende Formatierungslogik
+            return FormatJson(json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Fehler beim In-Memory JSON-Parsing: {ex.Message}");
+            return "";
+        }
+    }
 }

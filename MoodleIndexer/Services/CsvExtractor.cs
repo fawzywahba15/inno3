@@ -70,4 +70,25 @@ public class CsvExtractor
 
         return result.ToString().Trim();
     }
+    
+    public string ExtractFromBytes(byte[] fileBytes)
+    {
+        try
+        {
+            Console.WriteLine($"[INFO] Starte In-Memory CSV-Parsing.");
+            // 1. Erstelle einen MemoryStream aus dem Byte-Array
+            using var stream = new MemoryStream(fileBytes);
+            
+            // 2. Erstelle einen StreamReader, um den Stream als Text zu lesen (wichtig: UTF8 verwenden)
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            
+            // 3. Verwende die bestehende Parse-Logik
+            return ParseCsv(reader);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Fehler beim In-Memory CSV-Parsing: {ex.Message}");
+            return "";
+        }
+    }
 }

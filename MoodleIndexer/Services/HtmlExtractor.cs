@@ -49,4 +49,22 @@ public class HtmlExtractor
         doc.LoadHtml(html);
         return WebUtility.HtmlDecode(doc.DocumentNode.InnerText.Trim());
     }
+    public string ExtractFromBytes(byte[] fileBytes)
+    {
+        try
+        {
+            Console.WriteLine($"[INFO] Starte In-Memory HTML-Parsing.");
+            
+            // Konvertiere das Byte-Array in einen String (UTF8 ist Standard für HTML)
+            var html = System.Text.Encoding.UTF8.GetString(fileBytes);
+            
+            // Verwende die bestehende Extraktionslogik
+            return ExtractText(html);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Fehler beim In-Memory HTML-Parsing: {ex.Message}");
+            return "";
+        }
+    }
 }
