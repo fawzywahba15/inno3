@@ -22,11 +22,12 @@ public class MoodleService
     private readonly JsonExtractor _jsonExtractor;
     private readonly XmlExtractor _xmlExtractor;
     private readonly HtmlExtractor _htmlExtractor;
+    private readonly ZipExtractor _zipExtractor;
 
 
     public MoodleService(IConfiguration config, PdfExtractor pdf, WordExtractor word,
         PowerPointExtractor ppt, TextExtractor text, CsvExtractor csv, ExcelExtractor excel,
-        JsonExtractor json, XmlExtractor xml, HtmlExtractor html)
+        JsonExtractor json, XmlExtractor xml, HtmlExtractor html, ZipExtractor zip)
     {
         _config = config;
         _pdfExtractor = pdf;
@@ -38,7 +39,8 @@ public class MoodleService
         _jsonExtractor = json;
         _xmlExtractor = xml;
         _htmlExtractor = html;
-
+        _zipExtractor = zip;
+        
         _baseUrl = config["Moodle:BaseUrl"]!;
         _token = config["Moodle:Token"]!;
         _moodleDataDir = config["Moodle:FileDataPath"]!;

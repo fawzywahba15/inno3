@@ -14,6 +14,7 @@ var excelExtractor = new ExcelExtractor();
 var jsonExtractor = new JsonExtractor();
 var xmlExtractor = new XmlExtractor();
 var htmlExtractor = new HtmlExtractor();
+var zipExtractor = new ZipExtractor();
 
 var moodleService = new MoodleService(
     config,
@@ -25,7 +26,8 @@ var moodleService = new MoodleService(
     excelExtractor,
     jsonExtractor,
     xmlExtractor,
-    htmlExtractor
+    htmlExtractor,
+    zipExtractor
 );
 
 var indexService = new IndexService(config);

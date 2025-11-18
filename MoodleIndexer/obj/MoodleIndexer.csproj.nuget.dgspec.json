@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Fawzy\\Desktop\\inno3\\MoodleIndexer\\MoodleIndexer\\MoodleIndexer.csproj": {}
+    "C:\\Users\\Fawzy\\Desktop\\inno3\\MoodleIndexer\\MoodleIndexer.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Fawzy\\Desktop\\inno3\\MoodleIndexer\\MoodleIndexer\\MoodleIndexer.csproj": {
+    "C:\\Users\\Fawzy\\Desktop\\inno3\\MoodleIndexer\\MoodleIndexer.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Fawzy\\Desktop\\inno3\\MoodleIndexer\\MoodleIndexer\\MoodleIndexer.csproj",
+        "projectUniqueName": "C:\\Users\\Fawzy\\Desktop\\inno3\\MoodleIndexer\\MoodleIndexer.csproj",
         "projectName": "MoodleIndexer",
-        "projectPath": "C:\\Users\\Fawzy\\Desktop\\inno3\\MoodleIndexer\\MoodleIndexer\\MoodleIndexer.csproj",
+        "projectPath": "C:\\Users\\Fawzy\\Desktop\\inno3\\MoodleIndexer\\MoodleIndexer.csproj",
         "packagesPath": "C:\\Users\\Fawzy\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Fawzy\\Desktop\\inno3\\MoodleIndexer\\MoodleIndexer\\obj\\",
+        "outputPath": "C:\\Users\\Fawzy\\Desktop\\inno3\\MoodleIndexer\\obj\\",
         "projectStyle": "PackageReference",
         "UsingMicrosoftNETSdk": false,
         "configFilePaths": [
