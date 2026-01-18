@@ -3,6 +3,7 @@ import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http';
+import { AuthService } from '../services/auth.service';
 
 import {
   MatFormFieldModule,
@@ -37,9 +38,7 @@ import { debounceTime, Subject } from 'rxjs';
     MatProgressBarModule,
     MatCardModule,
     MatIconModule,
-
     MatInput
-
   ],
   templateUrl: './search.component.html',
   styleUrls: ['./search.component.css']
@@ -53,10 +52,7 @@ export class SearchComponent {
   allExpanded = false;
   expanded: Record<string, boolean> = {};
 
-
-
   private searchSubject = new Subject<string>();
-
 
   ngOnInit() {
     this.searchSubject.pipe(debounceTime(300)).subscribe(q => {
@@ -64,13 +60,15 @@ export class SearchComponent {
       this.searchCourses();
     });
   }
+
   onQueryChange(q: string) {
     this.searchSubject.next(q);
   }
 
-
-
-  constructor(private searchService: SearchService) {}
+  constructor(
+    private searchService: SearchService,
+    public auth: AuthService // 'public', damit es im HTML genutzt werden kann
+  ) {}
 
   stripHtml = stripHtml;
   getReadableSize = getReadableSize;
@@ -81,9 +79,25 @@ export class SearchComponent {
 
     this.searchService.search(this.query, this.sortBy).subscribe({
       next: (res) => {
+        let hits = res.hits;
+
+        // === SPRINT 3 LOGIK: Sichtbarkeit filtern ===
+        // Wenn der User KEIN Lehrender ist, entfernen wir versteckte Dateien.
+        if (!this.auth.isLecturer()) {
+          hits = hits.map(course => {
+            return {
+              ...course,
+              // Wir behalten nur Dateien, die explizit sichtbar sind (visible !== false)
+              // @ts-ignore
+              files: course.files ? course.files.filter(f => f.visible !== false) : []
+            };
+          });
+        }
+        // ============================================
+
         const filtered = this.filterCategory
-          ? res.hits.filter(course => (course as any).category === this.filterCategory)
-          : res.hits;
+          ? hits.filter(course => (course as any).category === this.filterCategory)
+          : hits;
 
         this.results = filtered;
 
@@ -196,8 +210,6 @@ export class SearchComponent {
     const highlighted = this.highlight(text);
     return highlighted.replace(/\n/g, '<br>');
   }
-
-
 
 
   toggleAll() {

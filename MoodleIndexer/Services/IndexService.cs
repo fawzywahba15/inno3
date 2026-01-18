@@ -1,40 +1,48 @@
-﻿using MoodleIndexer.Models;
-using System.Net.Http.Json;
+﻿using Meilisearch;
 using Microsoft.Extensions.Configuration;
+using MoodleIndexer.Models;
 
 namespace MoodleIndexer.Services;
 
 public class IndexService
 {
-    private readonly HttpClient _client = new();
-    private readonly string _url;
-    private readonly string _apiKey;
+    private readonly MeilisearchClient _client;
+    private readonly string _indexName = "courses";
 
     public IndexService(IConfiguration config)
     {
-        _url = config["MeiliSearch:Url"]!;
-        _apiKey = config["MeiliSearch:ApiKey"]!;
+        // Liest die Umgebungsvariable 'MeiliSearchUrl' aus Docker-Compose
+        var url = config["MeiliSearchUrl"] ?? "http://localhost:7700";
+        var key = config["MeiliSearchKey"] ?? "masterKeyMustBeLongEnough123";
+
+        Console.WriteLine($"🔧 IndexService Config: URL={url}");
+
+        _client = new MeilisearchClient(url, key);
     }
 
     public async Task IndexCoursesAsync(List<Course> courses)
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, _url)
-            {
-                Content = JsonContent.Create(courses)
-            };
-            request.Headers.Add("Authorization", $"Bearer {_apiKey}");
+            var index = _client.Index(_indexName);
 
-            var response = await _client.SendAsync(request);
-            if (response.IsSuccessStatusCode)
-                Console.WriteLine(" Erfolgreich an Meilisearch gesendet.");
-            else
-                Console.WriteLine($" Fehler: {response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+            // Index erstellen
+            await _client.CreateIndexAsync(_indexName, "id");
+
+            // Filtereinstellungen für Sprint 3 (Sichtbarkeit)
+            await index.UpdateFilterableAttributesAsync(new[] { "files.visible", "category" });
+
+            // Sortiereinstellungen
+            await index.UpdateSortableAttributesAsync(new[] { "title", "id" });
+
+            // Dokumente hochladen
+            var task = await index.AddDocumentsAsync(courses);
+
+            Console.WriteLine($"✅ {courses.Count} Kurse an MeiliSearch gesendet. Task UID: {task.TaskUid}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($" Fehler beim Senden an Meilisearch: {ex.Message}");
+            Console.WriteLine($"❌ Fehler beim Senden an Meilisearch: {ex.Message}");
         }
     }
 }

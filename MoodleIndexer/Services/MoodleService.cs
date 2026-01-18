@@ -14,6 +14,8 @@ public class MoodleService
     private readonly string _moodleDataDir;
 
     private int _errorCount = 0;
+
+    // Extractors
     private readonly WordExtractor _wordExtractor;
     private readonly PowerPointExtractor _pptExtractor;
     private readonly TextExtractor _textExtractor;
@@ -23,7 +25,6 @@ public class MoodleService
     private readonly XmlExtractor _xmlExtractor;
     private readonly HtmlExtractor _htmlExtractor;
     private readonly ZipExtractor _zipExtractor;
-
 
     public MoodleService(IConfiguration config, PdfExtractor pdf, WordExtractor word,
         PowerPointExtractor ppt, TextExtractor text, CsvExtractor csv, ExcelExtractor excel,
@@ -40,13 +41,24 @@ public class MoodleService
         _xmlExtractor = xml;
         _htmlExtractor = html;
         _zipExtractor = zip;
-        
+
         _baseUrl = config["Moodle:BaseUrl"]!;
         _token = config["Moodle:Token"]!;
+
+        // Priority: Docker Env Variable > AppSettings
         _moodleDataDir = config["Moodle:FileDataPath"]!;
-        var db = config.GetSection("Database");
-        _connectionString =
-            $"Server={db["Host"]};Port={db["Port"]};Database={db["Database"]};Uid={db["User"]};Pwd={db["Password"]};";
+
+        var envConnString = config["MoodleDbConnectionString"];
+        if (!string.IsNullOrEmpty(envConnString))
+        {
+            _connectionString = envConnString;
+            Console.WriteLine("🔧 Nutze ConnectionString aus Umgebungsvariablen.");
+        }
+        else
+        {
+            var db = config.GetSection("Database");
+            _connectionString = $"Server={db["Host"]};Port={db["Port"]};Database={db["Database"]};Uid={db["User"]};Pwd={db["Password"]};";
+        }
     }
 
     public async Task<List<Course>> FetchCourses()
@@ -54,12 +66,12 @@ public class MoodleService
         var courses = new List<Course>();
 
         using var conn = new MySqlConnection(_connectionString);
-        conn.Open();
+        await conn.OpenAsync();
 
         using var cmd = new MySqlCommand("SELECT id, fullname, shortname, summary FROM mdl_course WHERE id > 1", conn);
-        using var reader = cmd.ExecuteReader();
+        using var reader = await cmd.ExecuteReaderAsync();
 
-        while (reader.Read())
+        while (await reader.ReadAsync())
         {
             courses.Add(new Course
             {
@@ -69,6 +81,7 @@ public class MoodleService
                 Description = reader["summary"]?.ToString() ?? ""
             });
         }
+        await reader.CloseAsync();
 
         foreach (var course in courses)
         {
@@ -90,15 +103,11 @@ public class MoodleService
     private List<Section> FetchSections(int courseId)
     {
         var sections = new List<Section>();
-
         using var conn = new MySqlConnection(_connectionString);
         conn.Open();
 
-        using var cmd = new MySqlCommand("""
-            SELECT section, name, summary
-            FROM mdl_course_sections
-            WHERE course = @course AND visible = 1
-        """, conn);
+        // Hier lassen wir 'visible=1' vorerst drin, damit wir nicht leere Sektionen indexieren, Fokus liegt auf Dateien.
+        using var cmd = new MySqlCommand("SELECT section, name, summary FROM mdl_course_sections WHERE course = @course AND visible = 1", conn);
         cmd.Parameters.AddWithValue("@course", courseId);
 
         using var reader = cmd.ExecuteReader();
@@ -111,54 +120,44 @@ public class MoodleService
                 Summary = reader["summary"]?.ToString()
             });
         }
-
         return sections;
     }
 
     private List<Page> FetchPages(int courseId)
     {
         var pages = new List<Page>();
-
         using var conn = new MySqlConnection(_connectionString);
         conn.Open();
 
-        using var cmd = new MySqlCommand("""
+        using var cmd = new MySqlCommand(@"
             SELECT p.name, p.content
             FROM mdl_page p
             JOIN mdl_course_modules cm ON cm.instance = p.id
             JOIN mdl_modules m ON m.id = cm.module
-            WHERE cm.course = @course AND m.name = 'page' AND cm.visible = 1
-        """, conn);
+            WHERE cm.course = @course AND m.name = 'page' AND cm.visible = 1", conn);
         cmd.Parameters.AddWithValue("@course", courseId);
 
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
         {
-            pages.Add(new Page
-            {
-                Name = reader["name"]?.ToString(),
-                Content = reader["content"]?.ToString()
-            });
+            pages.Add(new Page { Name = reader["name"]?.ToString(), Content = reader["content"]?.ToString() });
         }
-
         return pages;
     }
 
     private List<Book> FetchBooks(int courseId)
     {
         var books = new List<Book>();
-
         using var conn = new MySqlConnection(_connectionString);
         conn.Open();
 
-        using var cmd = new MySqlCommand("""
+        using var cmd = new MySqlCommand(@"
             SELECT b.name AS book_name, ch.title AS chapter_title, ch.content
             FROM mdl_book_chapters ch
             JOIN mdl_book b ON b.id = ch.bookid
             JOIN mdl_course_modules cm ON cm.instance = b.id
             JOIN mdl_modules m ON m.id = cm.module
-            WHERE cm.course = @course AND m.name = 'book' AND cm.visible = 1
-        """, conn);
+            WHERE cm.course = @course AND m.name = 'book' AND cm.visible = 1", conn);
         cmd.Parameters.AddWithValue("@course", courseId);
 
         using var reader = cmd.ExecuteReader();
@@ -171,7 +170,6 @@ public class MoodleService
                 Content = reader["content"]?.ToString()
             });
         }
-
         return books;
     }
 
@@ -182,10 +180,13 @@ public class MoodleService
         using var conn = new MySqlConnection(_connectionString);
         conn.Open();
 
+        // Wir laden ALLE Dateien, auch versteckte (visible=0)
+        // Wir holen das Feld 'cm.visible' als 'is_visible'
         using var cmd = new MySqlCommand("""
             SELECT f.filename, f.filesize, f.mimetype, f.filepath, f.timemodified,
                    f.contextid, f.filearea, f.component, f.contenthash,
-                   cm.instance AS itemid
+                   cm.instance AS itemid,
+                   cm.visible AS is_visible
             FROM mdl_files f
             JOIN mdl_context ctx ON ctx.id = f.contextid
             JOIN mdl_course_modules cm ON ctx.instanceid = cm.id
@@ -194,7 +195,6 @@ public class MoodleService
               AND f.filename != '.'
               AND f.filesize > 0
               AND f.component LIKE 'mod_%'
-              AND cm.visible = 1
         """, conn);
         cmd.Parameters.AddWithValue("@course", courseId);
 
@@ -205,284 +205,75 @@ public class MoodleService
             var filepath = reader["filepath"].ToString()!;
             var mimetype = reader["mimetype"].ToString()!;
             var contentHash = reader["contenthash"].ToString()!;
-            var url = BuildFileUrl(reader);
 
+            // SPRINT 3: Sichtbarkeit auslesen (1 = sichtbar, 0 = versteckt)
+            bool isVisible = reader.GetInt32("is_visible") == 1;
+
+            var url = BuildFileUrl(reader);
             string text = "";
-            
-            var tempFiles = new List<CourseFile>(); // Für ZIP-entpackte Dateien
-            
-            
-            if (mimetype == "application/zip" || mimetype == "application/x-zip-compressed")
+            var tempFiles = new List<CourseFile>();
+
+            // --- ZIP SPECIAL HANDLING ---
+            if (mimetype.Contains("zip"))
             {
-                Console.WriteLine($"📦 ZIP-Datei wird verarbeitet: {filename}");
+                Console.WriteLine($"📦 ZIP wird verarbeitet: {filename} (Sichtbar: {isVisible})");
                 try
                 {
-                    var extracted = await _zipExtractor.ExtractFromUrlAsync(url);
-                    
-                    if (extracted.Any())
+                    // Versuche erst lokal zu laden (Performanter)
+                    var p1 = contentHash.Substring(0, 2);
+                    var p2 = contentHash.Substring(2, 2);
+                    var localPath = Path.Combine(_moodleDataDir, p1, p2, contentHash);
+
+                    List<ZipExtractor.ExtractedFile> extracted = new();
+
+                    if (File.Exists(localPath))
                     {
-                        Console.WriteLine($" -> {extracted.Count} Dateien entpackt.");
+                         // Wenn lokal vorhanden, lese Bytes und entpacke im Speicher
+                         Console.WriteLine($"[INFO] Lade ZIP lokal: {localPath}");
+                         var zipBytes = await File.ReadAllBytesAsync(localPath);
+                         // Hier bräuchten wir eigentlich eine Methode ExtractFromBytes im ZipExtractor
+                         // Fallback auf URL, da ZipExtractor aktuell nur URL kann:
+                         extracted = await _zipExtractor.ExtractFromUrlAsync(url);
+                    }
+                    else
+                    {
+                         extracted = await _zipExtractor.ExtractFromUrlAsync(url);
                     }
 
                     foreach (var entry in extracted)
                     {
-                        // ➡️ Verwende die neue Helfer-Methode zur Verarbeitung
                         var extractedText = ProcessExtractedFile(entry.Filename, entry.ContentBytes);
-                        
                         if (!string.IsNullOrWhiteSpace(extractedText))
                         {
-                            // Erstelle ein neues CourseFile-Objekt für die entpackte Datei
                             tempFiles.Add(new CourseFile
                             {
-                                Filename = $"{filename}/{entry.Filename}", // Name der ZIP + Dateiname
+                                Filename = $"{filename}/{entry.Filename}",
                                 Filepath = filepath,
                                 Filesize = entry.ContentBytes.Length,
                                 Mimetype = GetMimeTypeFromExtension(entry.Filename),
                                 Module = reader["component"].ToString()!.Replace("mod_", ""),
                                 Filearea = reader["filearea"].ToString()!,
                                 Timemodified = reader.GetInt64("timemodified"),
-                                Url = url, // URL zeigt auf die ZIP-Datei
-                                Text = extractedText
+                                Url = url,
+                                Text = extractedText,
+                                Visible = isVisible // Kind erbt Sichtbarkeit
                             });
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"❌ Fehler beim Verarbeiten der ZIP-Datei {filename}: {ex.Message}");
+                    Console.WriteLine($"❌ Fehler bei ZIP {filename}: {ex.Message}");
                     _errorCount++;
                 }
-            }
-            // 📄 Deine bestehende Extraktions-Logik
-            else if (mimetype == "application/pdf")
-            {
-                Console.WriteLine($"📄 PDF wird extrahiert: {filename}");
-
-                try
-                {
-                    text = _pdfExtractor.ExtractFromUrl(url).Result;
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"🔁 Fallback auf lokale Datei (hash): {contentHash}");
-                        text = _pdfExtractor.ExtractFromLocalHash(contentHash, _moodleDataDir);
-                    }
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"⚠️ Keine extrahierbaren Inhalte in: {filename}");
-                        _errorCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"❌ Fehler beim Extrahieren von {filename}: {ex.Message}");
-                    _errorCount++;
-                }
-            }else if (mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-            {
-                Console.WriteLine($"[INFO] Word-Datei wird extrahiert: {filename}");
-                try
-                {
-                    text = _wordExtractor.ExtractFromUrl(url).Result;
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[INFO] Fallback auf lokale Word-Datei: {contentHash}");
-                        text = _wordExtractor.ExtractFromLocalHash(contentHash, _moodleDataDir);
-                    }
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[WARN] Keine extrahierbaren Inhalte in: {filename}");
-                        _errorCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ERROR] Fehler beim Word-Parsing: {ex.Message}");
-                    _errorCount++;
-                }
-            }else if (mimetype == "application/vnd.openxmlformats-officedocument.presentationml.presentation")
-            {
-                Console.WriteLine($"[INFO] PPTX wird extrahiert: {filename}");
-                try
-                {
-                    text = _pptExtractor.ExtractFromUrl(url).Result;
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[INFO] Fallback auf lokale PPTX-Datei: {contentHash}");
-                        text = _pptExtractor.ExtractFromLocalHash(contentHash, _moodleDataDir);
-                    }
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[WARN] Keine extrahierbaren Inhalte in: {filename}");
-                        _errorCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ERROR] PPTX Fehler: {ex.Message}");
-                    _errorCount++;
-                }
-            }else if (mimetype == "text/plain")
-            {
-                Console.WriteLine($"[INFO] Text-Datei wird extrahiert: {filename}");
-                try
-                {
-                    text = _textExtractor.ExtractFromUrl(url).Result;
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[INFO] Fallback auf lokale Textdatei: {contentHash}");
-                        text = _textExtractor.ExtractFromLocalHash(contentHash, _moodleDataDir);
-                    }
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[WARN] Keine Inhalte in Textdatei: {filename}");
-                        _errorCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ERROR] Fehler bei Textdatei: {ex.Message}");
-                    _errorCount++;
-                }
-            }else if (mimetype == "text/csv")
-            {
-                Console.WriteLine($"[INFO] CSV-Datei wird extrahiert: {filename}");
-                try
-                {
-                    text = _csvExtractor.ExtractFromUrl(url).Result;
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[INFO] Fallback auf lokale CSV-Datei: {contentHash}");
-                        text = _csvExtractor.ExtractFromLocalHash(contentHash, _moodleDataDir);
-                    }
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[WARN] Keine Inhalte in CSV-Datei: {filename}");
-                        _errorCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ERROR] Fehler bei CSV-Datei: {ex.Message}");
-                    _errorCount++;
-                }
-            }else if (mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-                      mimetype == "application/vnd.ms-excel")
-            {
-                Console.WriteLine($"[INFO] Excel-Datei wird extrahiert: {filename}");
-                try
-                {
-                    text = _excelExtractor.ExtractFromUrl(url).Result;
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[INFO] Fallback auf lokale Excel-Datei: {contentHash}");
-                        text = _excelExtractor.ExtractFromLocalHash(contentHash, _moodleDataDir);
-                    }
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[WARN] Keine Inhalte in Excel-Datei: {filename}");
-                        _errorCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ERROR] Fehler bei Excel-Datei: {ex.Message}");
-                    _errorCount++;
-                }
-            }else if (mimetype == "application/json")
-            {
-                Console.WriteLine($"[INFO] JSON-Datei wird extrahiert: {filename}");
-                try
-                {
-                    text = _jsonExtractor.ExtractFromUrl(url).Result;
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[INFO] Fallback auf lokale JSON-Datei: {contentHash}");
-                        text = _jsonExtractor.ExtractFromLocalHash(contentHash, _moodleDataDir);
-                    }
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[WARN] Keine Inhalte in JSON-Datei: {filename}");
-                        _errorCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ERROR] Fehler bei JSON-Datei: {ex.Message}");
-                    _errorCount++;
-                }
-            }else if (mimetype == "application/xml" || mimetype == "text/xml")
-            {
-                Console.WriteLine($"[INFO] XML-Datei wird extrahiert: {filename}");
-                try
-                {
-                    text = _xmlExtractor.ExtractFromUrl(url).Result;
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[INFO] Fallback auf lokale XML-Datei: {contentHash}");
-                        text = _xmlExtractor.ExtractFromLocalHash(contentHash, _moodleDataDir);
-                    }
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[WARN] Keine Inhalte in XML-Datei: {filename}");
-                        _errorCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ERROR] Fehler bei XML-Datei: {ex.Message}");
-                    _errorCount++;
-                }
-            }else if (mimetype == "text/html")
-            {
-                Console.WriteLine($"[INFO] HTML-Datei wird extrahiert: {filename}");
-                try
-                {
-                    text = _htmlExtractor.ExtractFromUrl(url).Result;
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[INFO] Fallback auf lokale HTML-Datei: {contentHash}");
-                        text = _htmlExtractor.ExtractFromLocalHash(contentHash, _moodleDataDir);
-                    }
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        Console.WriteLine($"[WARN] Keine Inhalte in HTML-Datei: {filename}");
-                        _errorCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ERROR] Fehler bei HTML-Datei: {ex.Message}");
-                    _errorCount++;
-                }
-            }
-
-
-
-
-            if (tempFiles.Any())
-            {
-                files.AddRange(tempFiles);
             }
             else
             {
+                // --- STANDARD HANDLING (PDF, WORD, TEXT ...) ---
+                // Wir nutzen die Hilfsmethode, die automatisch lokal vs URL prüft
+                text = await TryExtractText(mimetype, url, contentHash, filename);
+
+                // Füge Datei zur Liste hinzu
                 files.Add(new CourseFile
                 {
                     Filename = filename,
@@ -493,137 +284,147 @@ public class MoodleService
                     Filearea = reader["filearea"].ToString()!,
                     Timemodified = reader.GetInt64("timemodified"),
                     Url = url,
-                    Text = text
+                    Text = text,
+                    Visible = isVisible // SPRINT 3: Property setzen
                 });
             }
+
+            if (tempFiles.Any()) files.AddRange(tempFiles);
         }
 
         return files;
     }
 
+    /// <summary>
+    /// Versucht Text zu extrahieren. Priorisiert lokale Datei (via Volume Mount),
+    /// falls das fehlschlägt, versucht es den URL Download.
+    /// </summary>
+    private async Task<string> TryExtractText(string mimetype, string url, string contentHash, string filename)
+    {
+        // 1. Versuch: Lokale Datei (Performance & Stabilität)
+        try
+        {
+            var p1 = contentHash.Substring(0, 2);
+            var p2 = contentHash.Substring(2, 2);
+            var localPath = Path.Combine(_moodleDataDir, p1, p2, contentHash);
 
-            /*
-            files.Add(new CourseFile
+            if (File.Exists(localPath))
             {
-                Filename = filename,
-                Filepath = filepath,
-                Filesize = reader.GetInt64("filesize"),
-                Mimetype = mimetype,
-                Module = reader["component"].ToString()!.Replace("mod_", ""),
-                Filearea = reader["filearea"].ToString()!,
-                Timemodified = reader.GetInt64("timemodified"),
-                Url = url,
-                Text = text
-            });
+                Console.WriteLine($"[INFO] Lokale Datei gefunden: {filename}");
+                var bytes = await File.ReadAllBytesAsync(localPath);
+
+                if (mimetype == "application/pdf")
+                    return _pdfExtractor.ExtractFromBytes(bytes);
+                if (mimetype.Contains("word") || mimetype.Contains("document"))
+                    return _wordExtractor.ExtractFromBytes(bytes);
+                if (mimetype.Contains("presentation") || mimetype.Contains("powerpoint"))
+                    return _pptExtractor.ExtractFromBytes(bytes);
+                if (mimetype.Contains("excel") || mimetype.Contains("spreadsheet"))
+                    return _excelExtractor.ExtractFromBytes(bytes);
+                if (mimetype.StartsWith("text/") || mimetype.Contains("json") || mimetype.Contains("xml") || mimetype.Contains("html"))
+                {
+                     // Einfache Text-Formate
+                     if (mimetype.Contains("html")) return _htmlExtractor.ExtractFromBytes(bytes);
+                     if (mimetype.Contains("json")) return _jsonExtractor.ExtractFromBytes(bytes);
+                     if (mimetype.Contains("xml")) return _xmlExtractor.ExtractFromBytes(bytes);
+                     return _textExtractor.ExtractFromBytes(bytes);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[WARN] Lokaler Zugriff fehlgeschlagen für {filename}: {ex.Message}. Versuche URL...");
         }
 
-        return files;
-    }*/
+        // 2. Versuch: URL Download (Fallback)
+        try
+        {
+            if (mimetype == "application/pdf") return await _pdfExtractor.ExtractFromUrl(url);
+            if (mimetype.Contains("word")) return await _wordExtractor.ExtractFromUrl(url);
+            if (mimetype.Contains("presentation")) return await _pptExtractor.ExtractFromUrl(url);
+            if (mimetype.Contains("excel")) return await _excelExtractor.ExtractFromUrl(url);
+            if (mimetype.StartsWith("text/") || mimetype.Contains("json") || mimetype.Contains("xml")) return await _textExtractor.ExtractFromUrl(url);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] URL Download auch fehlgeschlagen für {filename}: {ex.Message}");
+            _errorCount++;
+        }
 
-            private string BuildFileUrl(MySqlDataReader reader)
-            {
-                var filepath = reader["filepath"].ToString()!.Trim('/');
-                var parts = new List<string>
-                {
-                    _baseUrl,
-                    "pluginfile.php",
-                    reader["contextid"].ToString()!,
-                    reader["component"].ToString()!,
-                    reader["filearea"].ToString()!,
-                    reader["itemid"].ToString()!
-                };
+        return "";
+    }
 
-                if (!string.IsNullOrEmpty(filepath))
-                    parts.Add(filepath);
+    private string BuildFileUrl(MySqlDataReader reader)
+    {
+        var filepath = reader["filepath"].ToString()!.Trim('/');
+        var parts = new List<string>
+        {
+            _baseUrl,
+            "pluginfile.php",
+            reader["contextid"].ToString()!,
+            reader["component"].ToString()!,
+            reader["filearea"].ToString()!,
+            reader["itemid"].ToString()!
+        };
 
-                parts.Add(reader["filename"].ToString()!);
+        if (!string.IsNullOrEmpty(filepath))
+            parts.Add(filepath);
 
-                /*return $"{string.Join("/", parts)}?token={_token}";*/
-                var url = string.Join("/", parts);
-                url = url.Replace("/pluginfile.php/", "/webservice/pluginfile.php/");
-                return $"{url}?token={_token}";
+        parts.Add(reader["filename"].ToString()!);
 
-            }
+        var url = string.Join("/", parts);
+
+        // --- DOCKER FIXES ---
+        // Webservice Pfad korrigieren
+        url = url.Replace("/pluginfile.php/", "/webservice/pluginfile.php/");
+
+        // Hostname korrigieren: Browser nutzt localhost, Container nutzt 'moodle'
+        url = url.Replace("localhost:8081", "moodle:8080");
+
+        return $"{url}?token={_token}";
+    }
 
     private string ProcessExtractedFile(string filename, byte[] fileBytes)
+    {
+        var extension = Path.GetExtension(filename).ToLowerInvariant();
+        string text = "";
+        try
         {
-            var extension = Path.GetExtension(filename).ToLowerInvariant();
-            string text = "";
-
-            try
+            switch (extension)
             {
-                switch (extension)
-                {
-                    case ".pdf":
-                        text = _pdfExtractor.ExtractFromBytes(fileBytes);
-                        break;
-                    case ".docx":
-                        text = _wordExtractor.ExtractFromBytes(fileBytes);
-                        break;
-                    case ".pptx":
-                        text = _pptExtractor.ExtractFromBytes(fileBytes);
-                        break;
-                    case ".txt":
-                        text = _textExtractor.ExtractFromBytes(fileBytes);
-                        break;
-                    case ".csv":
-                        text = _csvExtractor.ExtractFromBytes(fileBytes);
-                        break;
-                    case ".xlsx":
-                    case ".xls":
-                        text = _excelExtractor.ExtractFromBytes(fileBytes);
-                        break;
-                    case ".json":
-                        text = _jsonExtractor.ExtractFromBytes(fileBytes);
-                        break;
-                    case ".xml":
-                        text = _xmlExtractor.ExtractFromBytes(fileBytes);
-                        break;
-                    case ".html":
-                    case ".htm":
-                        text = _htmlExtractor.ExtractFromBytes(fileBytes);
-                        break;
-                    default:
-                        Console.WriteLine($"[WARN] Dateiendung {extension} in ZIP nicht unterstützt: {filename}");
-                        return "";
-                }
-
-                if (string.IsNullOrWhiteSpace(text))
-                {
-                    Console.WriteLine($"[WARN] Keine extrahierbaren Inhalte in: {filename}");
-                    _errorCount++;
-                }
+                case ".pdf": text = _pdfExtractor.ExtractFromBytes(fileBytes); break;
+                case ".docx": text = _wordExtractor.ExtractFromBytes(fileBytes); break;
+                case ".pptx": text = _pptExtractor.ExtractFromBytes(fileBytes); break;
+                case ".txt": text = _textExtractor.ExtractFromBytes(fileBytes); break;
+                case ".csv": text = _csvExtractor.ExtractFromBytes(fileBytes); break;
+                case ".xlsx": case ".xls": text = _excelExtractor.ExtractFromBytes(fileBytes); break;
+                case ".json": text = _jsonExtractor.ExtractFromBytes(fileBytes); break;
+                case ".xml": text = _xmlExtractor.ExtractFromBytes(fileBytes); break;
+                case ".html": case ".htm": text = _htmlExtractor.ExtractFromBytes(fileBytes); break;
+                default: Console.WriteLine($"[WARN] Dateiendung {extension} in ZIP nicht unterstützt."); return "";
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERROR] Fehler beim Extrahieren von {filename} aus ZIP: {ex.Message}");
-                _errorCount++;
-            }
-
-            return text;
         }
+        catch (Exception ex) { Console.WriteLine($"[ERROR] Fehler beim Extrahieren aus ZIP: {ex.Message}"); }
+        return text;
+    }
 
-        // ➡️ Helfer-Methode zum Erraten des Mime-Typs
-        /// <summary>
-        /// Einfache Zuordnung von Dateiendung zu MIME-Typ.
-        /// </summary>
-        private string GetMimeTypeFromExtension(string filename)
+    private string GetMimeTypeFromExtension(string filename)
+    {
+        var extension = Path.GetExtension(filename).ToLowerInvariant();
+        return extension switch
         {
-            var extension = Path.GetExtension(filename).ToLowerInvariant();
-            return extension switch
-            {
-                ".pdf" => "application/pdf",
-                ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                ".xls" => "application/vnd.ms-excel",
-                ".txt" => "text/plain",
-                ".csv" => "text/csv",
-                ".json" => "application/json",
-                ".xml" => "application/xml",
-                ".html" => "text/html",
-                ".htm" => "text/html",
-                _ => "application/octet-stream"
-            };
-        }
+            ".pdf" => "application/pdf",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".xls" => "application/vnd.ms-excel",
+            ".txt" => "text/plain",
+            ".csv" => "text/csv",
+            ".json" => "application/json",
+            ".xml" => "application/xml",
+            ".html" => "text/html",
+            ".htm" => "text/html",
+            _ => "application/octet-stream"
+        };
+    }
 }

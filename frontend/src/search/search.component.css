@@ -234,3 +234,8 @@ ul li {
 .file-preview mark {
   background-color: #ffe082;
 }
+
+.role-debug-info h3 {
+  margin-top: 0;
+  color: #333;
+}
