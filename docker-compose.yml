@@ -1,14 +1,82 @@
 services:
+  # 1. Datenbank: MariaDB 10.6 LTS mit Moodle-Optimierung
+  mariadb:
+    image: mariadb:10.6
+    container_name: mariadb
+    restart: always
+    command: ['mysqld', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci', '--max-allowed-packet=128M']
+    environment:
+      - MARIADB_USER=bn_moodle
+      - MARIADB_DATABASE=bitnami_moodle
+      - MARIADB_PASSWORD=moodle123
+      - MARIADB_ROOT_PASSWORD=root123
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  # 2. Moodle LMS
+  moodle:
+    image: bitnamilegacy/moodle:4.2
+    container_name: moodle
+    restart: always
+    ports:
+      - "8081:8080"
+      - "8443:8443"
+    environment:
+      - MOODLE_DATABASE_HOST=mariadb
+      - MOODLE_DATABASE_PORT_NUMBER=3306
+      - MOODLE_DATABASE_USER=bn_moodle
+      - MOODLE_DATABASE_NAME=bitnami_moodle
+      - MOODLE_DATABASE_PASSWORD=moodle123
+      - MOODLE_URL=http://localhost:8081
+    depends_on:
+      - mariadb
+    volumes:
+      - moodle_data:/bitnami/moodle
+
+  # 3. Suchmaschine
   meilisearch:
     image: getmeili/meilisearch:v1.9
     container_name: meilisearch
     restart: always
     environment:
-      MEILI_MASTER_KEY: key123
+      - MEILI_MASTER_KEY=masterKeyMustBeLongEnough123
     ports:
       - "7700:7700"
     volumes:
       - meili_data:/meili_data
 
+  # 4. .NET Indexer (Backend)
+  indexer:
+    build: ./MoodleIndexer
+    container_name: moodle_indexer
+    restart: on-failure
+    ports:
+      - "5000:8080"
+    environment:
+      # Hier nutzen wir die Container-Namen statt localhost!
+      - MeiliSearchUrl=http://meilisearch:7700
+      - MeiliSearchKey=masterKeyMustBeLongEnough123
+      - MoodleDbConnectionString=Server=mariadb;Database=bitnami_moodle;User=bn_moodle;Password=moodle123;
+      # Damit der Indexer weiß, wo die lokalen Dateien liegen
+      - Moodle__FileDataPath=/bitnami/moodle/moodledata/filedir
+    depends_on:
+      - meilisearch
+      - mariadb
+    volumes:
+      # WICHTIG: Wir geben dem Indexer Zugriff auf die Moodle-Dateien!
+      - moodle_data:/bitnami/moodle
+
+  # 5. Angular Frontend
+  frontend:
+    build: ./frontend
+    container_name: moodle_search_frontend
+    restart: always
+    ports:
+      - "4200:80"
+    depends_on:
+      - indexer
+
 volumes:
+  mariadb_data:
+  moodle_data:
   meili_data:

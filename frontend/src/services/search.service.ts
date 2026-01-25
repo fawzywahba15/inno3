@@ -6,9 +6,10 @@ import { Course } from '../models/course.model';
 @Injectable({ providedIn: 'root' })
 export class SearchService {
   private readonly API_URL = 'http://localhost:7700/indexes/courses/search';
+
   private readonly headers = new HttpHeaders({
     'Content-Type': 'application/json',
-    Authorization: 'Bearer key123',
+    'Authorization': 'Bearer masterKeyMustBeLongEnough123'
   });
 
   constructor(private http: HttpClient) {}

@@ -43,4 +43,6 @@ public class CourseFile
     public long Timemodified { get; set; }
     public string Url { get; set; } = "";
     public string Text { get; set; } = "";
+
+    public bool Visible { get; set; } = true;
 }

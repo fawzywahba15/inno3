@@ -13,10 +13,9 @@
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />
         <PackageReference Include="MySqlConnector" Version="2.4.0" />
 
+        <PackageReference Include="Meilisearch" Version="0.15.0" />
+
         <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
     </ItemGroup>
-
-
-
 
 </Project>
