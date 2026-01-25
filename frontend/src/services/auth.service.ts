@@ -5,6 +5,7 @@ import { Injectable } from '@angular/core';
 })
 export class AuthService {
   private token: string | null = null;
+  // Standard-Rolle ist 'student' (sicherer Fallback)
   private role: 'student' | 'lecturer' = 'student';
 
   constructor() {
@@ -17,21 +18,41 @@ export class AuthService {
 
     // 2. Token auslesen (?token=XYZ)
     const urlToken = urlParams.get('token');
+
     if (urlToken) {
       this.token = urlToken;
       console.log('CIS Token gefunden:', this.token);
       // Token im LocalStorage speichern, falls der User F5 drückt
       localStorage.setItem('cis_token', this.token);
     } else {
-      // Fallback: Versuchen, Token aus Storage zu laden
+      // Fallback: Versuchen, Token aus Storage zu laden (bei Reload)
       this.token = localStorage.getItem('cis_token');
     }
 
-    // 3. Rolle auslesen (?role=lecturer oder ?role=student)
-    const urlRole = urlParams.get('role');
-    if (urlRole === 'lecturer' || urlRole === 'student') {
-      this.role = urlRole;
-      console.log('Benutzer-Rolle erkannt:', this.role);
+    // 3. SICHERHEITS-FIX: Rolle NICHT mehr aus URL lesen!
+    // Stattdessen: Rolle anhand des Tokens bestimmen (Mock-Backend)
+    if (this.token) {
+      this.validateTokenAndSetRole(this.token);
+    }
+  }
+
+  /**
+   * Simuliert die Backend-Validierung.
+   * Hier wird entschieden, wer welche Rechte hat.
+   */
+  private validateTokenAndSetRole(token: string) {
+    if (token === 'teacher999') {
+      this.role = 'lecturer';
+      console.log('✅ Backend-Check: Token als LEHRENDER validiert.');
+    }
+    else if (token === 'student123') {
+      this.role = 'student';
+      console.log('✅ Backend-Check: Token als STUDENT validiert.');
+    }
+    else {
+      // Unbekannter Token -> Fallback auf Student (oder ausloggen)
+      this.role = 'student';
+      console.warn('⚠️ Backend-Check: Unbekannter Token. Fallback auf Student.');
     }
   }
 
